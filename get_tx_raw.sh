@@ -3,10 +3,6 @@
 ## Create TX Raw to copy to cold environment
 ##
 
-echo -e $'What is the current name of the era?'
-read era
-
-
 echo 'What is the destination address for this transaction?'
 read dest
 
@@ -15,7 +11,6 @@ read amountToSend
 echo $'\n'
 
 amountInAda=$(echo "scale=6; $amountToSend / 1000000" | bc -l)
-echo -e $"Current era is: $era"
 echo -e $"Sending to destination address: $dest"
 echo -e $"Amount of Ada being sent: $amountInAda"
 echo $'\n'
@@ -25,14 +20,13 @@ read verify
 
 if  [ "$verify" == "y" ]
     then
-        currentSlot=$(cardano-cli query tip --mainnet | jq -r '.slotNo')
+        currentSlot=$(cardano-cli query tip --mainnet | jq -r '.slot')
         echo -e $"Current Slot: $currentSlot"
         echo $'\n'
 
         #Get total balance and UTXos
         cardano-cli query utxo \
             --address $(cat ~/cnode/keys/payment.addr) \
-            --$(echo $era)-era \
             --mainnet > fullUtxo.out
         tail -n +3 fullUtxo.out | sort -k3 -nr > balance.out
         cat balance.out
@@ -59,7 +53,6 @@ if  [ "$verify" == "y" ]
             --tx-out $(echo $dest)+0 \
             --invalid-hereafter $(( ${currentSlot} + 10000)) \
             --fee 0 \
-            --$(echo $era)-era \
             --out-file tx.tmp
 
 
@@ -84,7 +77,6 @@ if  [ "$verify" == "y" ]
             --tx-out $(echo $dest)+${amountToSend} \
             --invalid-hereafter $(( ${currentSlot} + 10000)) \
             --fee ${fee} \
-            --$(echo $era)-era \
             --out-file tx.raw
 
         echo $'\n'
