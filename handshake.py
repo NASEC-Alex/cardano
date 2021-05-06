@@ -4,12 +4,9 @@ Usage: python3 handshake.py <IPADDRESS> <PORT>
 '''
 import struct
 import gevent.socket
-import enum
-import binascii
 import sys
 import cbor2
 import time
-import logging
 
 network_magic = 764824073
 PROTOCOL_VERSION = 2
@@ -50,7 +47,6 @@ def handshake(sock):
     cbor_time = struct.pack('>I', time_since_start)
     # Protocol version 
     protocol = struct.pack('>I', PROTOCOL_VERSION)
-    # print(protocol)
     # Length of payload
     length = struct.pack('>I', len(cbor_obj))
     msg = protocol + length + cbor_obj
