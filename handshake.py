@@ -1,4 +1,7 @@
 #!/usr/bin/python3
+'''
+Usage: python3 handshake.py <IPADDRESS> <PORT>
+'''
 import struct
 import gevent.socket
 import enum
