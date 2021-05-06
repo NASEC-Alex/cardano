@@ -14,9 +14,6 @@ import logging
 network_magic = 764824073
 PROTOCOL_VERSION = 2
 
-def prepend_length(s):
-    return struct.pack('>I', len(s)) + s
-
 def pack_u32(n):
     return struct.pack('>I', n)
 
@@ -32,34 +29,6 @@ def recvall(sock, n):
             return None
         data += packet
     return data
-
-def recv_exact(sock, n):
-    buf = b''
-    while len(buf) < n:
-        s = sock.recv(n - len(buf))
-        print(len(buf))
-        assert s, 'connection closed'
-        buf += s
-    return buf
-
-class HandshakeResponse(enum.IntEnum):
-    UnsupportedVersion = 0xFFFFFFFF
-    Accepted           = 0x00000000
-    InvalidRequest     = 0x00000001
-    Crossed            = 0x00000002
-    HostMismatch       = 0x00000003
-
-def parse_endpoint_addr(addr):
-    parts = addr.rsplit(b':', 2)
-    if len(parts) == 3:
-        return parts[0], int(parts[1]), int(parts[2])
-    elif len(parts) == 2:
-        return parts[0], int(parts[1]), 0
-    elif len(parts) == 1:
-        return parts[0], 80, 0
-    else:
-        assert False, 'impossible'
-
 
 def unpack_u32(s):
     return struct.unpack('>I', s)[0]
