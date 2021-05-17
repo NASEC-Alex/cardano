@@ -3,13 +3,13 @@
 Usage: python3 handshake.py <IPADDRESS> <PORT>
 '''
 import struct
-import gevent.socket
 import sys
 import cbor2
 import time
-
+import logging
+import socket
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 network_magic = 764824073
-PROTOCOL_VERSION = 2
 
 def pack_u32(n):
     return struct.pack('>I', n)
@@ -17,59 +17,85 @@ def pack_u32(n):
 def unpack_u32(s):
     return struct.unpack('>I', s)[0]
 
-def recvall(sock, n):
-    # Helper function to recv n bytes or return None if EOF is hit
-    data = b''
-    while len(data) < n:
-        packet = sock.recv(n - len(data))
-        if not packet:
-            return None
-        data += packet
+def recv_data(sock, n):
+    # Helper function to recv n bytes where n should be the header['length'] or 8 to parse headers
+    data = sock.recv(n)
     return data
 
-def unpack_u32(s):
-    return struct.unpack('>I', s)[0]
+def node_response(sock):
+    # Receive next packet
+    resp = recv_data(sock, 8)
+    headers = parse_headers(resp)
+    logging.debug(headers)
+    data = recv_data(sock, headers['length'])
+    return cbor2.loads(data)
 
 def endpoint_connect(host, port):
-    print('Opening a TCP connection to %s:%d' % (host, port))
+    logging.info('Opening a TCP connection to %s:%d' % (host, port))
     # Open a socket
-    sock = gevent.socket.create_connection((host, port))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((host, port))
     return sock
 
+def convert_bits(data):
+    '''
+    Used to convert bytes to bits for deconstructing headers
+    '''
+    bits = ''
+    for my_byte in data:
+        bits += f'{my_byte:0>8b}'
+    return bits
+
+def parse_headers(resp):
+    '''
+    Parse protocol headers to retrieve 
+    - Timestamp: Bytes 0 to 3
+    - Mode & Mini Protocol Version: Bytes 4 and 5, first bit (Mode) & 15 bit remainder (Version) 
+    - Length: Bytes 6 and 7
+    '''
+    headers = dict()
+    # Obtain Mode and Mini Protocol Version
+    mode_mini_protcol = convert_bits(resp[4 : 6])
+    # Build headers dictionary
+    headers['length'] = int(resp[6 :].hex(), 16)
+    headers['timestamp'] = str(unpack_u32(resp[:4]))[:4] + '.' + str(unpack_u32(resp[:4]))[4:]
+    headers['mode'] = mode_mini_protcol[0]
+    headers['mini_protocol'] = int(mode_mini_protcol[1:], 2)
+    return headers
+
 def handshake(sock):
-    start_time = time.time()
+    '''
+    Handshake with the Cardano Node
+    '''
     # Create the object for verison proposal
-    obj = [0, {1 : network_magic, 2: network_magic, 3: network_magic, 4: [network_magic, False], 5: [network_magic, False], 6: [network_magic, False]}]
+    start_time = int(time.monotonic() * 1000)
+    # You can propose all of the versions
+    # obj = [0, {1 : network_magic, 2: network_magic, 3: network_magic, 4: [network_magic, False], 5: [network_magic, False], 6: [network_magic, False], 7: [network_magic, False]}]
+    obj = [0, {4: [network_magic, False]}]
     # Object as CBOR
     cbor_obj = cbor2.dumps(obj)
     # Time in milliseconds
-    time_since_start = round(time.time()*1000 - start_time*1000)
-    cbor_time = struct.pack('>I', time_since_start)
-    # Protocol version 
-    protocol = struct.pack('>I', PROTOCOL_VERSION)
+    cbor_time = struct.pack('>I', start_time)
     # Length of payload
     length = struct.pack('>I', len(cbor_obj))
-    msg = protocol + length + cbor_obj
-    print('-----------')
-    print('Protocol Version: ' + protocol.hex())
-    print('Length: ' + length.hex())
-    print('Available Options: ' + cbor2.dumps(cbor_obj).hex())
-    print('-----------')
-    print('Constructed Payload: ' + msg.hex())
-    print('-----------\n')
-    sock.sendall(msg)
+    msg = cbor_time + length + cbor_obj
+    logging.debug('Timestamp: ' + str(start_time) + ' ' + cbor2.dumps(cbor_obj).hex())
+    logging.debug('Length: ' + str(len(cbor_obj)) + ' ' + length.hex())
+    logging.debug('Version Options: ' + str(obj) + ' ' + cbor2.dumps(cbor_obj).hex())
+    logging.debug('Constructed Payload: ' + msg.hex())
     # STATE: PROPOSE
-    resp = recvall(sock, 18)
-    print('Node hex Response: ' + resp.hex())
-    # Last 10 bytes are the version selected
-    result = cbor2.loads(resp[8:])
-    print('Version Selection: ' + str(result), (resp[8:].hex()))
-    return sock 
+    logging.info('>>> Version Proposal: ' + str(cbor2.loads(cbor_obj)))
+    sock.send(msg)
+    data = node_response(sock)
+    logging.info('<<< Version: ' + str(data))
+    return
 
 def main():
     host, port = sys.argv[1], int(sys.argv[2])
     sock = endpoint_connect(host, port)
     handshake(sock)
+    data = node_response(sock)
+    logging.info('<<< ' + str(data))
     return
 
 if __name__ == '__main__':
